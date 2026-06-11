@@ -19,7 +19,7 @@ export async function analyzeEstimate(pdfText, apiKey) {
       contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: 4096,
+        maxOutputTokens: 16000,
         responseMimeType: 'application/json',
       },
     }),
@@ -32,9 +32,19 @@ export async function analyzeEstimate(pdfText, apiKey) {
   }
 
   const data = await response.json();
-  const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const candidate = data?.candidates?.[0];
+  const finishReason = candidate?.finishReason;
+  const raw = candidate?.content?.parts?.[0]?.text || '';
 
   if (!raw) throw new Error('Gemini returned an empty response. Check your API key and quota.');
+
+  // Detect mid-stream truncation before attempting to parse
+  if (finishReason === 'MAX_TOKENS') {
+    throw new Error(
+      'Gemini response was cut off (MAX_TOKENS). The estimate may be too large — '
+      + 'try a shorter PDF or contact support.'
+    );
+  }
 
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
 

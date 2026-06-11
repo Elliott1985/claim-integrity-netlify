@@ -1,3 +1,4 @@
+/* eslint-disable no-useless-escape */
 // PII redaction before sending text to Claude API
 export function redactPII(text) {
   let result = text;
@@ -7,14 +8,14 @@ export function redactPII(text) {
 
   // Phone numbers
   const phonePatterns = [
-    /\b\d{3}[.\-\s]?\d{3}[.\-\s]?\d{4}\b/g,
-    /\(\d{3}\)\s*\d{3}[.\-\s]?\d{4}/g,
-    /\+1\s*\d{3}[.\-\s]?\d{3}[.\-\s]?\d{4}/g,
+    /\b\d{3}[.\s-]?\d{3}[.\s-]?\d{4}\b/g,
+    /\(\d{3}\)\s*\d{3}[.\s-]?\d{4}/g,
+    /\+1\s*\d{3}[.\s-]?\d{3}[.\s-]?\d{4}/g,
   ];
   phonePatterns.forEach(p => { result = result.replace(p, '[REDACTED_PII]'); });
 
   // SSN
-  result = result.replace(/\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/g, '[REDACTED_PII]');
+  result = result.replace(/\b\d{3}[\s-]?\d{2}[\s-]?\d{4}\b/g, '[REDACTED_PII]');
 
   // Street addresses
   result = result.replace(
@@ -24,11 +25,11 @@ export function redactPII(text) {
 
   // Named fields
   const nameLabels = [
-    /(Insured\s*[:\-]?\s*)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})/gi,
-    /(Insured Name\s*[:\-]?\s*)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})/gi,
-    /(Policy\s*Holder\s*[:\-]?\s*)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})/gi,
-    /(Claimant\s*[:\-]?\s*)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})/gi,
-    /(Homeowner\s*[:\-]?\s*)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})/gi,
+    /(Insured\s*[:-]?\s*)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})/gi,
+    /(Insured Name\s*[:-]?\s*)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})/gi,
+    /(Policy\s*Holder\s*[:-]?\s*)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})/gi,
+    /(Claimant\s*[:-]?\s*)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})/gi,
+    /(Homeowner\s*[:-]?\s*)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})/gi,
   ];
   nameLabels.forEach(p => {
     result = result.replace(p, (_, label) => `${label}[REDACTED_PII]`);

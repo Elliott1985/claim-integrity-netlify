@@ -1,7 +1,8 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { extractPdfText } from './pdfExtract';
 import { redactPII } from './piiRedact';
-import { analyzeEstimate } from './claudeApi';
+import { analyzeEstimate } from './geminiApi';
+import DEMO_RESULT from './demoData';
 import './App.css';
 
 // ─── Severity helpers ────────────────────────────────────────────────────────
@@ -161,99 +162,119 @@ function TradeSummaryBar({ trade_summary }) {
 
 // ─── Main App ────────────────────────────────────────────────────────────────
 export default function App() {
-  const [apiKey, setApiKey]         = useState('');
-  const [showKey, setShowKey]       = useState(false);
-  const [file, setFile]             = useState(null);
-  const [dragging, setDragging]     = useState(false);
-  const [status, setStatus]         = useState('idle'); // idle | extracting | redacting | analyzing | done | error
-  const [statusMsg, setStatusMsg]   = useState('');
-  const [result, setResult]         = useState(null);
-  const [rawText, setRawText]       = useState('');
-  const [showRaw, setShowRaw]       = useState(false);
-  const [showJson, setShowJson]     = useState(false);
-  const [elapsed, setElapsed]       = useState(null);
+  const [apiKey, setApiKey]       = useState('');
+  const [showKey, setShowKey]     = useState(false);
+  const [file, setFile]           = useState(null);
+  const [dragging, setDragging]   = useState(false);
+  const [status, setStatus]       = useState('idle');
+  const [statusMsg, setStatusMsg] = useState('');
+  const [result, setResult]       = useState(null);
+  const [rawText, setRawText]     = useState('');
+  const [showRaw, setShowRaw]     = useState(false);
+  const [showJson, setShowJson]   = useState(false);
+  const [elapsed, setElapsed]     = useState(null);
+  const [isDemo, setIsDemo]       = useState(false);
   const fileRef = useRef();
-  const timerRef = useRef();
 
   const handleFile = useCallback(f => {
-    if (!f || f.type !== 'application/pdf') {
-      alert('Please upload a PDF file.');
-      return;
-    }
-    setFile(f);
-    setResult(null);
-    setRawText('');
-    setStatus('idle');
+    if (!f || f.type !== 'application/pdf') { alert('Please upload a PDF file.'); return; }
+    setFile(f); setResult(null); setRawText(''); setStatus('idle'); setIsDemo(false);
   }, []);
 
   const onDrop = useCallback(e => {
-    e.preventDefault();
-    setDragging(false);
+    e.preventDefault(); setDragging(false);
     const f = e.dataTransfer.files[0];
     if (f) handleFile(f);
   }, [handleFile]);
 
+  // Live analysis
   const analyze = async () => {
     if (!file || !apiKey) return;
     const t0 = Date.now();
-    timerRef.current = t0;
-
+    setIsDemo(false);
     try {
-      setStatus('extracting');
-      setStatusMsg('Extracting PDF text…');
+      setStatus('extracting'); setStatusMsg('Extracting PDF text…');
       const text = await extractPdfText(file);
-      if (!text.trim()) throw new Error('Could not extract text from PDF. The file may be image-based or corrupted.');
+      if (!text.trim()) throw new Error('Could not extract text. The file may be image-based or corrupted.');
       setRawText(text);
 
-      setStatus('redacting');
-      setStatusMsg('Redacting PII…');
+      setStatus('redacting'); setStatusMsg('Redacting PII…');
       const redacted = redactPII(text);
 
-      setStatus('analyzing');
-      setStatusMsg('Analyzing with Claude AI…');
+      setStatus('analyzing'); setStatusMsg('Analyzing with Gemini AI…');
       const data = await analyzeEstimate(redacted, apiKey.trim());
 
       setElapsed(((Date.now() - t0) / 1000).toFixed(1));
-      setResult(data);
-      setStatus('done');
+      setResult(data); setStatus('done');
     } catch (err) {
-      setStatus('error');
-      setStatusMsg(err.message || 'Unknown error');
+      setStatus('error'); setStatusMsg(err.message || 'Unknown error');
     }
   };
 
-  const canAnalyze = file && apiKey.trim() && status !== 'extracting' && status !== 'redacting' && status !== 'analyzing';
+  // Demo mode — instant, no API needed
+  const runDemo = () => {
+    setResult(DEMO_RESULT);
+    setStatus('done');
+    setIsDemo(true);
+    setElapsed('0.0');
+    setFile(null);
+    setRawText('');
+    // Scroll main content to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const reset = () => {
+    setResult(null); setStatus('idle'); setIsDemo(false);
+    setRawText(''); setFile(null); setElapsed(null);
+  };
+
+  const canAnalyze = file && apiKey.trim() && !['extracting','redacting','analyzing'].includes(status);
   const isLoading  = ['extracting','redacting','analyzing'].includes(status);
 
-  // ── Computed from result ──
-  const leakage   = result?.leakage_findings || [];
-  const compFlags = result?.policy_compliance_flags || [];
-  const fin       = result?.financial_summary || {};
-  const summary   = result?.audit_summary || {};
-  const info      = result?.claim_info || {};
+  const leakage    = result?.leakage_findings || [];
+  const compFlags  = result?.policy_compliance_flags || [];
+  const fin        = result?.financial_summary || {};
+  const summary    = result?.audit_summary || {};
+  const info       = result?.claim_info || {};
   const totalSavings = leakage.reduce((s, f) => s + (f.potential_savings || 0), 0);
   const highFindings = leakage.filter(f => f.severity === 'High').length;
 
   return (
     <div className="app-layout">
-      {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
+
+      {/* ── SIDEBAR ── */}
       <aside className="sidebar">
         <div className="sidebar-brand">
           <div className="brand-title">Claim Integrity Engine</div>
           <div className="brand-sub">Xactimate Audit &amp; Leakage Detection</div>
         </div>
 
+        {/* Demo Mode Banner */}
+        <div className="demo-banner">
+          <div className="demo-banner-title">🎬 No API key? No problem.</div>
+          <div className="demo-banner-sub">Load a pre-analyzed water loss claim with 10 planted billing errors — no key required.</div>
+          <button className="demo-btn" onClick={runDemo}>
+            ▶ Run Demo Mode
+          </button>
+          {isDemo && (
+            <div className="demo-active-badge">● Demo Mode Active</div>
+          )}
+        </div>
+
+        {/* Divider */}
+        <div className="sidebar-divider-label">— or analyze your own PDF —</div>
+
         {/* API Key */}
         <div className="sidebar-section">
-          <div className="sidebar-label">API Settings</div>
-          <label className="input-label">Anthropic API Key</label>
+          <div className="sidebar-label">API Settings (Gemini)</div>
+          <label className="input-label">Google Gemini API Key</label>
           <div className="key-row">
             <input
               className="key-input"
               type={showKey ? 'text' : 'password'}
               value={apiKey}
               onChange={e => setApiKey(e.target.value)}
-              placeholder="sk-ant-…"
+              placeholder="AIza…"
               spellCheck={false}
               autoComplete="off"
             />
@@ -261,8 +282,10 @@ export default function App() {
               {showKey ? '🙈' : '👁️'}
             </button>
           </div>
-          {!apiKey && <div className="key-hint">Get a key at <a href="https://console.anthropic.com" target="_blank" rel="noreferrer">console.anthropic.com</a></div>}
-          {apiKey && <div className="key-ok">✓ Key entered</div>}
+          {!apiKey
+            ? <div className="key-hint">Free key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">aistudio.google.com</a></div>
+            : <div className="key-ok">✓ Key entered</div>
+          }
         </div>
 
         {/* Upload */}
@@ -307,49 +330,51 @@ export default function App() {
           </label>
         </div>
 
-        {/* Analyze button */}
-        <button
-          className={`analyze-btn ${isLoading ? 'loading' : ''}`}
-          disabled={!canAnalyze}
-          onClick={analyze}
-        >
+        <button className={`analyze-btn ${isLoading ? 'loading' : ''}`} disabled={!canAnalyze} onClick={analyze}>
           {isLoading ? statusMsg : '🔍 Analyze Estimate'}
         </button>
 
-        {/* Security notice */}
+        {result && (
+          <button className="reset-btn" onClick={reset}>↺ Reset</button>
+        )}
+
         <div className="sidebar-section security-block">
           <div className="security-row">✅ PII Redaction Active</div>
           <div className="security-row">🔒 Zero Storage Architecture</div>
           <div className="security-row">🌐 SSL/TLS Encrypted</div>
-          <div className="security-row">🛡️ SOC 2 Type II Ready</div>
+          <div className="security-row">⚡ Powered by Gemini 2.5 Flash</div>
         </div>
 
         <div className="sidebar-disclaimer">
-          <strong>Disclaimer:</strong> This tool is a proof-of-concept. PII redaction is algorithmic and for demonstration purposes only.
+          <strong>Disclaimer:</strong> Proof-of-concept tool. PII redaction is algorithmic and for demonstration purposes only.
         </div>
       </aside>
 
-      {/* ── MAIN CONTENT ─────────────────────────────────────────────────── */}
+      {/* ── MAIN CONTENT ── */}
       <main className="main-content">
-        {/* Page header */}
         <div className="page-header">
           <div>
             <h1 className="page-title">Claim Integrity Engine</h1>
             <p className="page-sub">Xactimate Estimate Analysis &amp; Leakage Detection Platform</p>
           </div>
-          {status === 'done' && elapsed && (
-            <div className="processed-badge">
-              Processed in {elapsed}s · {leakage.length + compFlags.length} findings
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {isDemo && <span className="demo-pill">🎬 Demo Mode</span>}
+            {status === 'done' && elapsed && (
+              <div className="processed-badge">
+                {isDemo ? 'Demo loaded' : `Processed in ${elapsed}s`} · {leakage.length + compFlags.length} findings
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* ── IDLE STATE ── */}
+        {/* Idle */}
         {status === 'idle' && !result && (
           <div className="idle-state">
             <div className="idle-icon">🔍</div>
             <h2 className="idle-title">Ready to Audit</h2>
-            <p className="idle-body">Upload an Xactimate estimate PDF and enter your Anthropic API key to begin analysis. The engine will scan for financial leakage, billing overlaps, equipment overcounting, and policy compliance issues.</p>
+            <p className="idle-body">
+              Upload an Xactimate estimate PDF with your Gemini API key to run a live analysis — or hit <strong>Run Demo Mode</strong> in the sidebar for an instant walkthrough with no key needed.
+            </p>
             <div className="feature-grid">
               {[
                 ['💧','Water Mitigation','Air mover counts, monitoring days, Cat 2/3 billing'],
@@ -366,16 +391,17 @@ export default function App() {
                 </div>
               ))}
             </div>
+            <button className="demo-btn-large" onClick={runDemo}>▶ Run Demo Mode — No API Key Required</button>
           </div>
         )}
 
-        {/* ── LOADING STATE ── */}
+        {/* Loading */}
         {isLoading && (
           <div className="loading-state">
             <div className="spinner" />
             <div className="loading-msg">{statusMsg}</div>
             <div className="loading-steps">
-              {['Extracting PDF text','Redacting PII','Analyzing with Claude AI'].map((step, i) => {
+              {['Extracting PDF text','Redacting PII','Analyzing with Gemini AI'].map((step, i) => {
                 const stepStatus = ['extracting','redacting','analyzing'][i];
                 const isActive   = status === stepStatus;
                 const isDone     = ['extracting','redacting','analyzing'].indexOf(status) > i;
@@ -390,18 +416,20 @@ export default function App() {
           </div>
         )}
 
-        {/* ── ERROR STATE ── */}
+        {/* Error */}
         {status === 'error' && (
           <div className="error-state">
             <div className="error-icon">⚠️</div>
             <div className="error-title">Analysis Failed</div>
             <div className="error-msg">{statusMsg}</div>
-            <button className="analyze-btn" style={{ marginTop: 16, maxWidth: 200 }}
-              onClick={() => setStatus('idle')}>Try Again</button>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 16 }}>
+              <button className="analyze-btn" style={{ maxWidth: 160 }} onClick={() => setStatus('idle')}>Try Again</button>
+              <button className="demo-btn" onClick={runDemo}>▶ Run Demo Instead</button>
+            </div>
           </div>
         )}
 
-        {/* ── RAW TEXT ── */}
+        {/* Raw text */}
         {showRaw && rawText && (
           <div style={{ marginBottom: 20 }}>
             <SectionHeader title="Extracted PDF Text" />
@@ -413,7 +441,14 @@ export default function App() {
         {result && status === 'done' && (
           <div className="results">
 
-            {/* KPI row */}
+            {/* Demo mode notice */}
+            {isDemo && (
+              <div className="demo-notice">
+                🎬 <strong>Demo Mode</strong> — Showing pre-analyzed results for claim CLM-2024-08471 (mock Xactimate water loss estimate with 10 planted billing errors). To analyze your own PDF, add a Gemini API key and upload a file.
+              </div>
+            )}
+
+            {/* KPIs */}
             <div className="kpi-row">
               <MetricCard label="Risk Level" value={summary.risk_level || '—'}
                 color={RISK_COLOR[summary.risk_level] || '#323130'}
@@ -421,8 +456,7 @@ export default function App() {
               <MetricCard label="Potential Leakage" value={`$${totalSavings.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
                 color="#C0392B" sub={`${leakage.length} finding${leakage.length !== 1 ? 's' : ''}`} />
               <MetricCard label="High Severity" value={highFindings}
-                color={highFindings > 0 ? '#C0392B' : '#27AE60'}
-                sub="leakage findings" />
+                color={highFindings > 0 ? '#C0392B' : '#27AE60'} sub="leakage findings" />
               <MetricCard label="Compliance Flags" value={compFlags.length}
                 color={compFlags.length > 0 ? '#E67E22' : '#27AE60'}
                 sub={`Pricing: ${summary.pricing_status || '—'}`} />
@@ -432,12 +466,12 @@ export default function App() {
             <SectionHeader title="Claim Information" />
             <div className="info-grid">
               {[
-                ['Claim Number',   info.claim_number   || '—'],
-                ['Date of Loss',   info.date_of_loss   || '—'],
-                ['Cause of Loss',  info.cause_of_loss  || '—'],
-                ['Claim Type',     info.claim_type     || '—'],
-                ['Price List',     info.price_list     || '—'],
-                ['Estimate Date',  info.estimate_date  || '—'],
+                ['Claim Number',  info.claim_number  || '—'],
+                ['Date of Loss',  info.date_of_loss  || '—'],
+                ['Cause of Loss', info.cause_of_loss || '—'],
+                ['Claim Type',    info.claim_type    || '—'],
+                ['Price List',    info.price_list    || '—'],
+                ['Estimate Date', info.estimate_date || '—'],
               ].map(([k, v]) => (
                 <div key={k} className="info-item">
                   <div className="info-key">{k}</div>
@@ -450,21 +484,14 @@ export default function App() {
             <SectionHeader title="Financial Summary" />
             <div className="fin-grid">
               <div className="fin-block">
-                {[
-                  ['Gross Estimate', fin.gross_estimate],
-                  ['Depreciation',   fin.depreciation],
-                  ['ACV',            fin.acv],
-                ].map(([k, v]) => (
+                {[['Gross Estimate', fin.gross_estimate],['Depreciation', fin.depreciation],['ACV', fin.acv]].map(([k, v]) => (
                   <div key={k} className="fin-row">
                     <span className="fin-label">{k}</span>
                     <span className="fin-value">${(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                   </div>
                 ))}
                 <div className="fin-divider" />
-                {[
-                  ['Deductible', fin.deductible],
-                  ['Net Claim',  fin.net_claim],
-                ].map(([k, v]) => (
+                {[['Deductible', fin.deductible],['Net Claim', fin.net_claim]].map(([k, v]) => (
                   <div key={k} className="fin-row fin-row-bold">
                     <span className="fin-label">{k}</span>
                     <span className="fin-value">${(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
@@ -473,17 +500,14 @@ export default function App() {
               </div>
               <div className="fin-block">
                 <div className={`deductible-status ${fin.deductible_applied_correctly ? 'ok' : 'err'}`}>
-                  {fin.deductible_applied_correctly
-                    ? '✅ Deductible correctly applied'
-                    : '❌ Deductible calculation error detected'}
+                  {fin.deductible_applied_correctly ? '✅ Deductible correctly applied' : '❌ Deductible calculation error detected'}
                 </div>
-                {/* Expected net check */}
                 {fin.gross_estimate && fin.deductible && (() => {
                   const expected = Math.max(0, (fin.acv || fin.gross_estimate) - fin.deductible);
                   const diff = Math.abs((fin.net_claim || 0) - expected);
                   if (diff > 1) return (
                     <div className="deductible-status err" style={{ marginTop: 8 }}>
-                      ⚠️ Net claim discrepancy: expected ${expected.toLocaleString('en-US', { minimumFractionDigits: 2 })}, got ${(fin.net_claim || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      ⚠️ Expected ${expected.toLocaleString('en-US', { minimumFractionDigits: 2 })}, got ${(fin.net_claim || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </div>
                   );
                   return null;
@@ -502,9 +526,7 @@ export default function App() {
                   .map((f, i) => <FindingCard key={i} f={f} idx={i} />)}
               </>
             )}
-            {leakage.length === 0 && status === 'done' && (
-              <div className="all-clear">✅ No leakage issues detected</div>
-            )}
+            {leakage.length === 0 && <div className="all-clear">✅ No leakage issues detected</div>}
 
             {/* Compliance Flags */}
             {compFlags.length > 0 && (

@@ -15,9 +15,9 @@ Xactimate Estimate Analysis & Leakage Detection Platform
 ### Option B — GitHub + Netlify CI (recommended)
 1. Push this folder to a GitHub repo
 2. Go to [app.netlify.com](https://app.netlify.com) → **Add new site → Import from Git**
-3. Select your repo — Netlify auto-detects the build settings from `netlify.toml`:
-   - **Build command:** `npm run build`
-   - **Publish directory:** `build`
+3. Netlify auto-detects build settings from `netlify.toml`:
+   - Build command: `npm run build`
+   - Publish directory: `build`
 4. Click **Deploy site**
 
 ---
@@ -26,35 +26,38 @@ Xactimate Estimate Analysis & Leakage Detection Platform
 
 ```bash
 npm install
-npm start          # Opens http://localhost:3000
+npm start    # Opens http://localhost:3000
 ```
 
 ---
 
-## How It Works
+## API Key (Google Gemini — Free)
 
-This is a fully static app — no server, no Python, no backend.
+Get a free key at [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)  
+No credit card required. Free tier: 1,500 requests/day, resets every 24 hours.
 
-| Layer | Technology |
-|---|---|
-| UI | React 18 |
-| PDF extraction | pdf.js (loaded from CDN at runtime) |
-| PII redaction | Client-side regex (see `src/piiRedact.js`) |
-| AI analysis | Anthropic Claude API (called directly from browser) |
-| Hosting | Netlify static CDN |
-
-The user's API key is entered in the UI, held only in React state, and sent
-directly to `api.anthropic.com` — it is never stored or logged anywhere.
+The app calls Gemini 2.5 Flash directly from the browser.  
+The key lives only in React state — never stored or logged anywhere.
 
 ---
 
-## API Key
+## Demo Mode
 
-Users provide their own Anthropic API key in the sidebar.  
-Get one at [console.anthropic.com](https://console.anthropic.com).
+No API key? Click **Run Demo Mode** in the sidebar.  
+Loads a pre-analyzed mock Xactimate water loss claim (CLM-2024-08471) with  
+10 planted billing errors — fully interactive, zero API calls required.
 
-The app uses `claude-sonnet-4-20250514` with `anthropic-dangerous-allow-browser: true`
-which is required for direct browser-to-API calls.
+Planted errors include:
+- Excessive air movers (12 for 180 SF — should be 3-4)
+- Cat 3 PPE billed on a Cat 2 gray water loss
+- Net claim math error ($50 overpayment)
+- No depreciation applied (ACV = RCV throughout)
+- Wallboard removal + wallpaper removal double-dip
+- Primer billed standalone + paint with primer (x2 rooms)
+- Pre-hung door + separate hinge line item
+- Carpet tear-out + pad tear-out billed separately
+- Excessive carpet waste (15% vs 10% threshold)
+- Excessive LVP waste (18% vs 10% threshold)
 
 ---
 
@@ -62,27 +65,16 @@ which is required for direct browser-to-API calls.
 
 ```
 src/
-  App.js           # Main UI — sidebar, upload, results dashboard
-  App.css          # All styles (Microsoft Fluent-inspired)
-  claudeApi.js     # Anthropic API call + JSON parsing
-  pdfExtract.js    # pdf.js wrapper for client-side PDF text extraction
-  piiRedact.js     # Regex-based PII scrubbing before API call
-  systemPrompt.js  # Full audit system prompt (ported from Python version)
-  index.js         # React entry point
-  index.css        # Global reset
+  App.js           Main UI — sidebar, upload, results dashboard
+  App.css          All styles
+  geminiApi.js     Google Gemini API call + JSON parsing
+  pdfExtract.js    pdf.js wrapper for client-side PDF text extraction
+  piiRedact.js     Regex-based PII scrubbing before API call
+  systemPrompt.js  Full audit system prompt
+  demoData.js      Pre-analyzed mock estimate for demo mode
+  index.js         React entry point
+  index.css        Global reset
 public/
   index.html
-netlify.toml       # Build config + SPA redirect rule
+netlify.toml       Build config + SPA redirect rule
 ```
-
----
-
-## Audit Capabilities
-
-- **Water Mitigation** — air mover counts, monitoring days, Cat 2/3 billing
-- **Flooring** — waste percentages, carpet/pad overlap, prep items
-- **Roofing** — waste factors, starter/drip edge overlap, ice & water shield
-- **Double-Dip Detection** — pre-hung doors + hinges, drywall + wallpaper, paint + primer
-- **Financial Compliance** — deductible application, depreciation, math errors
-- **Policy Compliance** — COL mismatches, outdated pricing, sub-limit enforcement
-- **Coverage Limits** — Coverage A/B/C validation, trade category totals
